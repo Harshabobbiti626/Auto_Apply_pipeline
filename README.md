@@ -16,8 +16,9 @@ fit — straight to your inbox within ~60 minutes of them being posted.
 GitHub Actions (hourly cron)
         │
         ▼
-Fetch 46 public sources (parallel, ~15s)
-  Greenhouse · Lever · SmartRecruiters · Workable · Jobicy · Arbeitnow
+Fetch 49 public sources (parallel, ~15s)
+  Greenhouse · Lever · SmartRecruiters · Workable
+  Jobicy · Arbeitnow · RemoteOK · Himalayas · Shine
   + Adzuna India (aggregator) + JSearch (optional)
         │
         ▼
@@ -42,10 +43,12 @@ one-click apply link**. Days with no matches = no email. Silence means clean, no
 |---|---|---|
 | Greenhouse + Lever (44 curated companies) | Bangalore HQ/branch product companies & GCCs in the 500–10,000 employee band — Databricks, Cloudflare, Okta, Coinbase, Postman, Groww, CRED, Meesho, Zeta, Porter… | — |
 | SmartRecruiters / Workable | companies on other ATSs (extensible in one line) | — |
-| Jobicy + Arbeitnow | global remote boards — India-eligible roles only pass the filter | — |
+| Jobicy + Arbeitnow + RemoteOK + Himalayas | global remote boards — India-eligible roles only pass the filter | — |
+| Shine.com | India-wide aggregator, keyless (agency-heavy → strict score + experience parsing) | — |
 | [Adzuna India](https://developer.adzuna.com) (free key) | aggregates dozens of smaller boards; Bengaluru, ≤1 day old | `ADZUNA_APP_ID` + `ADZUNA_APP_KEY` |
 | [JSearch on RapidAPI](https://rapidapi.com/) (paid ~$10/mo) | the only clean route to LinkedIn / Indeed / Naukri listings | `JSEARCH_API_KEY` |
 | Naukri / LinkedIn / Indeed direct | ❌ intentionally excluded — anti-bot walls + ToS violations; account-ban risk | — |
+| Ashby, Workday, WeWorkRemotely, Remotive, Foundit | ❌ probed — auth-walled or bot-blocked (verified 2026-09) | — |
 
 Company size (500–10,000) is enforced via the **curated list** — job APIs don't expose
 headcounts, so the list is the filter. Dead boards are skipped automatically, never crash runs.

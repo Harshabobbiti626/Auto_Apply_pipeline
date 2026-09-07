@@ -1,8 +1,9 @@
 # 🔔 Bangalore Job Alert Pipeline — Setup Guide
 
-Fully automated: **every hour**, checks 46 sources — 44 curated Bangalore-hiring companies
-(500–10,000 employees) across Greenhouse, Lever, SmartRecruiters, Workable, plus global remote
-boards (Jobicy, Arbeitnow), plus optional aggregators (Adzuna, JSearch) — for new
+Fully automated: **every hour**, checks 49 sources — 44 curated Bangalore-hiring companies
+(500–10,000 employees) across Greenhouse, Lever, SmartRecruiters, Workable; global remote
+boards (Jobicy, Arbeitnow, RemoteOK, Himalayas); India aggregator Shine.com; and optional
+aggregators (Adzuna, JSearch) — for new
 **Java / Spring Boot / Backend / Full-stack / React** roles matching a ~2-year experience level
 and published in the **last 3 hours**. Emails only the new matches — deduplicated by
 source ID **and** by role (company+title+location), so the same opening never emails twice.

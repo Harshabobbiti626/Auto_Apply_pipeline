@@ -193,3 +193,7 @@ companies:
   # Global remote boards — only India-eligible postings survive the location filter
   - {name: Jobicy,        ats: jobicy,     slug: "-", size: "remote"}
   - {name: Arbeitnow,     ats: arbeitnow,  slug: "-", size: "remote"}
+  - {name: RemoteOK,      ats: remoteok,   slug: "-", size: "remote"}
+  - {name: Himalayas,     ats: himalayas,  slug: "-", size: "remote"}
+  # India aggregator (keyless; agency-heavy → strict score + experience checks)
+  - {name: Shine,         ats: shine,      slug: "-", size: "aggregator"}

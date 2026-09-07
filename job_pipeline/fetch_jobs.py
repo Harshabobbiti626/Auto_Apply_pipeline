@@ -102,7 +102,7 @@ def save_state(cfg, seen, roles):
 
 # ---------------------------------------------------------------- fetchers
 def _get(url):
-    r = requests.get(url, headers=UA, timeout=25)
+    r = requests.get(url, headers={**UA, "Accept": "application/json"}, timeout=25)
     r.raise_for_status()
     return r.json()
 
@@ -253,6 +253,84 @@ def fetch_adzuna(_slug):
     return jobs
 
 
+def fetch_shine(_slug):
+    """Shine.com India (keyless). Agency-heavy — aggregator strictness applies."""
+    jobs = []
+    for page in (1, 2):
+        try:
+            data = _get("https://www.shine.com/api/v2/search/simple/"
+                        f"?q=java%20spring%20boot%20react&loc=bangalore&page={page}&page_size=50")
+        except Exception:
+            break
+        for j in data.get("results") or []:
+            title = j.get("jJT") or "job"
+            slug = j.get("jSlug") or re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+            loc = j.get("jLoc")
+            loc = ", ".join(loc) if isinstance(loc, list) else (loc or "bangalore")
+            jobs.append({
+                "id": str(j.get("id", "")),
+                "title": title,
+                "url": f"https://www.shine.com/job-search/{slug}-{j.get('id')}",
+                "location": loc,
+                "posted": j.get("jPDate"),  # published date → freshness applies
+                "desc": j.get("jJD") or "",
+                "company_override": j.get("jCD") or j.get("jCName") or "",
+            })
+    return jobs
+
+
+def fetch_remoteok(_slug):
+    """RemoteOK (keyless). Only India-eligible roles pass the location filter."""
+    data = _get("https://remoteok.com/api")
+    jobs = []
+    for j in data if isinstance(data, list) else []:
+        if not isinstance(j, dict) or not j.get("position"):
+            continue  # first element is their legal notice
+        posted = None
+        if j.get("date"):
+            try:
+                posted = datetime.fromtimestamp(int(j["date"]), tz=timezone.utc).isoformat()
+            except (ValueError, TypeError, OverflowError):
+                pass
+        jobs.append({
+            "id": str(j.get("id") or j.get("slug") or j.get("position")),
+            "title": j.get("position") or "",
+            "url": j.get("url") or j.get("apply_url") or "",
+            "location": f"{j.get('location') or 'remote'} (remote)",
+            "posted": posted,
+            "desc": strip_html(j.get("description") or "", limit=1500),
+            "company_override": j.get("company") or "",
+        })
+    return jobs
+
+
+def fetch_himalayas(_slug):
+    """Himalayas (keyless). Only India-eligible roles pass the location filter."""
+    data = _get("https://himalayas.app/jobs/api?limit=50")
+    jobs = []
+    for j in data.get("jobs") or []:
+        posted = None
+        if j.get("pubDate"):
+            try:
+                posted = datetime.fromtimestamp(int(j["pubDate"]), tz=timezone.utc).isoformat()
+            except (ValueError, TypeError, OverflowError):
+                pass
+        company = j.get("companyName") or ""
+        title = (j.get("title") or "")
+        if company and title.lower().startswith(company.lower()):
+            title = title[len(company):].lstrip(" -–—")  # "Co - Role" → "Role"
+        jobs.append({
+            "id": str(j.get("guid") or j.get("applicationLink") or title),
+            "title": title,
+            "url": j.get("applicationLink") or j.get("guid") or "",
+            "location": ", ".join(j.get("locationRestrictions") or []) + " (remote)",
+            "posted": posted,
+            "desc": j.get("description") or j.get("excerpt") or "",
+            "company_override": company,
+        })
+    return jobs
+
+
 def fetch_jsearch(_slug):
     """JSearch (RapidAPI) — aggregates LinkedIn/Indeed/Naukri/Glassdoor. Paid key required."""
     key = os.environ.get("JSEARCH_API_KEY")
@@ -286,6 +364,9 @@ FETCHERS.update({
     "arbeitnow": fetch_arbeitnow,
     "adzuna": fetch_adzuna,
     "jsearch": fetch_jsearch,
+    "shine": fetch_shine,
+    "remoteok": fetch_remoteok,
+    "himalayas": fetch_himalayas,
 })
 
 
@@ -526,7 +607,8 @@ def main():
                     except Exception:
                         pass
                 score, kws = score_job(job, s)
-                eff_min = agg_score if company["ats"] in ("adzuna", "jsearch") else min_score
+                eff_min = (agg_score if company["ats"] in ("adzuna", "jsearch", "shine")
+                           else min_score)
                 if score < eff_min:  # not an exact profile match (aggregators demand more)
                     continue
                 if not experience_fit(job["title"], strip_html(job["desc"], limit=6000), s):
