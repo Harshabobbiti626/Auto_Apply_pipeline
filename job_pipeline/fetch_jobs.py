@@ -40,7 +40,7 @@ UA = {"User-Agent": "blr-job-alerts/1.0 (github-actions)"}
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("job-alerts")
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 STATE_MAX_AGE_DAYS = 120
 
 
@@ -64,35 +64,40 @@ def state_path(cfg):
 
 
 def load_state(cfg):
-    """Returns (state_dict, existed_before_run)."""
+    """Returns (seen_by_source_id, seen_by_role, existed_before_run)."""
     p = state_path(cfg)
     if os.path.exists(p):
         try:
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return data.get("seen", {}), True
+            return data.get("seen", {}), data.get("roles", {}), True
         except (json.JSONDecodeError, OSError) as e:
             log.warning("State file unreadable (%s) — reseeding: %s", e, p)
-    return {}, False
+    return {}, {}, False
 
 
-def save_state(cfg, seen):
+def save_state(cfg, seen, roles):
     if DRY_RUN:
         log.info("DRY_RUN — state not persisted")
         return
     p = state_path(cfg)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     cutoff = datetime.now(timezone.utc) - timedelta(days=STATE_MAX_AGE_DAYS)
-    pruned = {}
-    for k, iso in seen.items():
-        try:
-            if datetime.fromisoformat(iso) >= cutoff:
-                pruned[k] = iso
-        except ValueError:
-            pruned[k] = iso  # keep malformed entries rather than re-alerting
+
+    def fresh(entries):
+        kept = {}
+        for k, iso in entries.items():
+            try:
+                if datetime.fromisoformat(iso) >= cutoff:
+                    kept[k] = iso
+            except ValueError:
+                kept[k] = iso  # keep malformed entries rather than re-alerting
+        return kept
+
     with open(p, "w", encoding="utf-8") as f:
-        json.dump({"version": STATE_VERSION, "seen": pruned}, f, indent=1)
-    log.info("State saved: %d jobs seen (%s)", len(pruned), p)
+        json.dump({"version": STATE_VERSION, "seen": fresh(seen), "roles": fresh(roles)},
+                  f, indent=1)
+    log.info("State saved: %d jobs / %d roles seen (%s)", len(seen), len(roles), p)
 
 
 # ---------------------------------------------------------------- fetchers
@@ -475,7 +480,7 @@ def main():
     s = cfg["settings"]
     max_email_jobs_global = s["max_email_jobs"]
 
-    seen, existed = load_state(cfg)
+    seen, roles, existed = load_state(cfg)
     now_iso = datetime.now(timezone.utc).isoformat()
 
     def fetch_company(company):
@@ -485,7 +490,8 @@ def main():
     min_score = s.get("min_profile_score", 4)
     agg_score = s.get("aggregator_min_profile_score", 6)
     max_age = float(s.get("max_job_age_hours", 26))
-    skipped_old = skipped_exp = 0
+    skipped_old = skipped_exp = dup_skipped = 0
+    seen_roles_run = set()
 
     companies = list(cfg["companies"])
     # Optional aggregator sources — activated only when their API key secret exists
@@ -532,18 +538,28 @@ def main():
                 match = {**job, "company": job.get("company_override") or name,
                          "size": company.get("size", ""), "ats": company["ats"],
                          "snippet": strip_html(job["desc"]), "score": score, "kws": kws}
-                all_matches.append(match)
-                kept += 1
                 key = f"{name}:{job['id']}"
-                if key not in seen:
+                # role-level dedupe: same opening mirrored across sources must
+                # never email twice (company + title + location identify a role)
+                role_key = f"{match['company'].lower()}|{match['title'].lower()}|{(match['location'] or '').lower()}"
+                if role_key not in seen_roles_run:
+                    seen_roles_run.add(role_key)
+                    all_matches.append(match)
+                    kept += 1
+                if key not in seen and role_key not in roles:
                     seen[key] = now_iso
+                    roles[role_key] = now_iso
                     new_jobs.append(match)
+                elif key not in seen:
+                    seen[key] = now_iso  # same role seen via another source — mark, don't email
+                    dup_skipped += 1
             log.info("%-15s %2d/%2d jobs match profile", name, kept, len(jobs))
 
     new_jobs.sort(key=lambda r: (-r["score"], r["company"]))
-    log.info("Total open matches: %d | NEW: %d | wrong-experience skipped: %d | "
-             "older-than-%dh skipped: %d | boards failed: %d",
-             len(all_matches), len(new_jobs), skipped_exp, max_age, skipped_old, len(failed))
+    log.info("Total open matches: %d | NEW: %d | role-dupes suppressed: %d | "
+             "wrong-experience skipped: %d | older-than-%dh skipped: %d | boards failed: %d",
+             len(all_matches), len(new_jobs), dup_skipped, skipped_exp, max_age,
+             skipped_old, len(failed))
 
     outbox = os.path.join(ROOT, s.get("outbox_path", "outbox"))
     os.makedirs(outbox, exist_ok=True)
@@ -560,7 +576,7 @@ def main():
         print(f"[DRY RUN] would process {len(new_jobs)} new job(s); state NOT saved; no email sent")
         return 0
 
-    save_state(cfg, seen)
+    save_state(cfg, seen, roles)
 
     if not existed:  # first run: seed silently + intro email (avoid blasting hundreds)
         sample = sorted(all_matches, key=lambda r: (-r["score"], r["company"]))[:15]

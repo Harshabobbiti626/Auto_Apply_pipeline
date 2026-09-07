@@ -4,7 +4,8 @@ Fully automated: **every hour**, checks 46 sources — 44 curated Bangalore-hiri
 (500–10,000 employees) across Greenhouse, Lever, SmartRecruiters, Workable, plus global remote
 boards (Jobicy, Arbeitnow), plus optional aggregators (Adzuna, JSearch) — for new
 **Java / Spring Boot / Backend / Full-stack / React** roles matching a ~2-year experience level
-and published in the **last 26 hours**. Emails only the new matches, within ~1 hour of posting.
+and published in the **last 3 hours**. Emails only the new matches — deduplicated by
+source ID **and** by role (company+title+location), so the same opening never emails twice.
 
 Runs free on GitHub Actions (no PC needed). All sources are public APIs — no scraping, no ToS issues.
 

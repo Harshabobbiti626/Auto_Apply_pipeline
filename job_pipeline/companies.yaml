@@ -89,9 +89,9 @@ settings:
   # Also accept "Remote - India" style listings
   remote_india_ok: true
 
-  # Only alert jobs PUBLISHED within the last N hours ("posted today").
+  # Only alert jobs PUBLISHED within the last N hours.
   # Older listings are never emailed, even if first detected later.
-  max_job_age_hours: 26
+  max_job_age_hours: 3
 
   # ---- Profile match scoring (description-level, keywords from resume) ----
   # A job is emailed only if its weighted score >= min_profile_score.

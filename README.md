@@ -27,10 +27,10 @@ Filter gauntlet
   3. Location      — Bangalore / BLR / Karnataka / Remote-India only
   4. Profile score — resume keywords vs full job description
   5. Experience    — parses "4-7 yrs", "5+ years" → drops anything outside ~2 yrs
-  6. Freshness     — only jobs published in the last 26 hours
+  6. Freshness     — only jobs published in the last 3 hours
         │
         ▼
-Dedupe against seen-jobs state → ✉️ email NEW matches only
+Dedupe by source-ID **and** by role (company+title+location) → ✉️ email NEW matches only
 ```
 
 Every email shows: **company (size) · role · location · posted-when · profile-match keywords ·
@@ -69,13 +69,14 @@ Optional: add `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` (free) or `JSEARCH_API_KEY` (paid
 | `profile_keywords` + `min_profile_score` | resume skills, score ≥ 4 | description-level matching |
 | `aggregator_min_profile_score` | 6 | stricter bar for Adzuna/JSearch (agency spam) |
 | `experience_target_years` / `experience_max_asks` / `experience_min_asks` | 2 / 3 / 1.5 | explicit-range experience fit |
-| `max_job_age_hours` | 26 | "posted today" freshness |
+| `max_job_age_hours` | 3 | freshness window — only brand-new postings |
 | `companies:` | 44 verified boards | add any Greenhouse/Lever/SmartRecruiters/Workable board as one YAML line |
 
 ## Reliability
 
 - ⏱️ Hourly cron at :07 UTC; GitHub delays are typically a few minutes — always inside the hour
 - 💾 Seen-jobs state travels via Actions **cache + daily git snapshot** → no duplicate emails even after cache loss
+- 👯 **Role-level dedupe**: the same opening mirrored across sources (e.g. Adzuna + Greenhouse) emails exactly once
 - 📧 **Failure alerts**: a broken run emails you automatically with the log link
 - 🔁 **Daily keepalive commit** prevents GitHub's 60-day-inactivity auto-disable
 - 🧯 Dead/misconfigured boards are logged and skipped; the rest of the run is unaffected
