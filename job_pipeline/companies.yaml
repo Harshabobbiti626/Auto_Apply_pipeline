@@ -1,9 +1,13 @@
 # ============================================================
 # Bangalore Job Alert Pipeline — curated company list
-# All companies are ~500-10,000 employees (verified live boards)
+# All companies are ~500-10,000 employees (verified live boards),
+# Bangalore HQ / branch, or remote-India friendly.
 # ats: greenhouse | lever
 # size: approximate headcount, shown in alert emails
 # Add/remove companies freely — dead boards are skipped automatically.
+# NOTE: companies running private ATSs (PhonePe, Swiggy, Zepto, Razorpay,
+# Flipkart...) can't be covered without scraping — add on request if one
+# switches to Greenhouse/Lever.
 # ============================================================
 
 settings:
@@ -81,6 +85,10 @@ settings:
   # Also accept "Remote - India" style listings
   remote_india_ok: true
 
+  # Only alert jobs PUBLISHED within the last N hours ("posted today").
+  # Older listings are never emailed, even if first detected later.
+  max_job_age_hours: 26
+
   # ---- Profile match scoring (description-level, keywords from resume) ----
   # A job is emailed only if its weighted score >= min_profile_score.
   # Title hit = weight x2, description hit = weight x1.
@@ -147,3 +155,18 @@ companies:
   - {name: Mindtickle,    ats: lever, slug: mindtickle,  size: "~1,100"}
   - {name: Porter,        ats: lever, slug: porter,      size: "~3,200"}
   - {name: Pocket FM,     ats: lever, slug: pocketfm,    size: "~900"}
+  - {name: Nium,          ats: lever, slug: nium,        size: "~900"}
+
+  # ---------- Expansion wave: global cos with Bangalore branch (Greenhouse) ----------
+  - {name: Cloudflare,    ats: greenhouse, slug: cloudflare, size: "~3,800"}
+  - {name: Dropbox,       ats: greenhouse, slug: dropbox,    size: "~2,500"}
+  - {name: Airbnb,        ats: greenhouse, slug: airbnb,     size: "~6,900"}
+  - {name: Roblox,        ats: greenhouse, slug: roblox,     size: "~2,400"}
+  - {name: JFrog,         ats: greenhouse, slug: jfrog,      size: "~1,100"}
+  - {name: InMobi,        ats: greenhouse, slug: inmobi,     size: "~2,500"}
+  - {name: Soroco,        ats: greenhouse, slug: soroco,     size: "~600"}
+  - {name: Glance,        ats: greenhouse, slug: glance,     size: "~800"}
+  - {name: Okta,          ats: greenhouse, slug: okta,       size: "~5,500"}
+  - {name: Coinbase,      ats: greenhouse, slug: coinbase,   size: "~5,000"}
+  - {name: Zenoti,        ats: greenhouse, slug: zenoti,     size: "~1,500"}
+  - {name: Netradyne,     ats: greenhouse, slug: netradyne,  size: "~1,000"}

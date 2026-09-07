@@ -111,7 +111,8 @@ def fetch_greenhouse(slug):
             "title": j.get("title") or "",
             "url": j.get("absolute_url") or "",
             "location": (j.get("location") or {}).get("name") or "",
-            "posted": j.get("updated_at") or j.get("first_published"),
+            # prefer first_published (true posting date) — updated_at bumps on edits
+            "posted": j.get("first_published") or j.get("updated_at"),
             "desc": j.get("content") or "",
         })
     return jobs
@@ -169,6 +170,19 @@ def score_job(job, s):
             score += pts
             hits.append(kw)
     return score, hits
+
+
+def is_fresh(iso, max_hours):
+    """True if the job was published within the last `max_hours` (or age unknown)."""
+    if not iso:
+        return True
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt) <= timedelta(hours=max_hours)
+    except ValueError:
+        return True
 
 
 def rel_time(iso):
@@ -291,7 +305,9 @@ def main():
         return company, FETCHERS[company["ats"]](company["slug"])
 
     all_matches, new_jobs, failed = [], [], []
-    min_score = s.get("min_profile_score", 5)
+    min_score = s.get("min_profile_score", 4)
+    max_age = float(s.get("max_job_age_hours", 26))
+    skipped_old = 0
     with ThreadPoolExecutor(max_workers=12) as pool:
         future_map = {pool.submit(fetch_company, c): c for c in cfg["companies"]}
         for fut in as_completed(future_map):
@@ -311,6 +327,9 @@ def main():
                 score, kws = score_job(job, s)
                 if score < min_score:  # not an exact profile match
                     continue
+                if not is_fresh(job["posted"], max_age):  # older than "posted today"
+                    skipped_old += 1
+                    continue
                 match = {**job, "company": name, "size": company.get("size", ""),
                          "ats": company["ats"], "snippet": strip_html(job["desc"]),
                          "score": score, "kws": kws}
@@ -323,7 +342,8 @@ def main():
             log.info("%-15s %2d/%2d jobs match profile", name, kept, len(jobs))
 
     new_jobs.sort(key=lambda r: (-r["score"], r["company"]))
-    log.info("Total open matches: %d | NEW: %d | boards failed: %d", len(all_matches), len(new_jobs), len(failed))
+    log.info("Total open matches: %d | NEW: %d | older-than-%dh skipped: %d | boards failed: %d",
+             len(all_matches), len(new_jobs), max_age, skipped_old, len(failed))
 
     outbox = os.path.join(ROOT, s.get("outbox_path", "outbox"))
     os.makedirs(outbox, exist_ok=True)
