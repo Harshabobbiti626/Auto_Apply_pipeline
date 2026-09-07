@@ -1,0 +1,73 @@
+name: Bangalore job alerts
+
+on:
+  schedule:
+    # Hourly at :07 UTC — new jobs reach your inbox within ~1 hour of posting.
+    # GitHub may delay scheduled runs by a few minutes at busy times.
+    - cron: "7 * * * *"
+  workflow_dispatch: {}   # allows manual "Run workflow" for testing
+
+permissions:
+  contents: write         # needed for the daily state snapshot commit
+
+concurrency:
+  group: blr-job-alerts
+  cancel-in-progress: false
+
+jobs:
+  fetch-and-alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Rolling state (seen job IDs) travels between runs via Actions cache;
+      # a daily git snapshot below is the durable fallback if cache is evicted.
+      - name: Restore seen-jobs state
+        uses: actions/cache/restore@v4
+        with:
+          path: job_pipeline/state
+          key: seen-jobs-${{ github.run_id }}
+          restore-keys: |
+            seen-jobs-
+
+      - name: Install dependencies
+        run: pip install -r job_pipeline/requirements.txt
+
+      - name: Fetch jobs and send alerts
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+        run: python job_pipeline/fetch_jobs.py
+
+      - name: Save seen-jobs state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: job_pipeline/state
+          key: seen-jobs-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Durable fallback: snapshot state into the repo once a day (07:07 UTC run)
+      - name: Daily state snapshot
+        if: always()
+        run: |
+          if [ "$(date -u +%H)" = "07" ] && [ -f job_pipeline/state/seen_jobs.json ]; then
+            git config user.name "job-alert-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add job_pipeline/state/seen_jobs.json
+            git diff --cached --quiet || git commit -m "chore: seen-jobs snapshot $(date -u +%F)"
+            git push
+          fi
+
+      - name: Upload run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-report-${{ github.run_number }}
+          path: job_pipeline/outbox/
+          retention-days: 14

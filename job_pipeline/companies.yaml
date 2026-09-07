@@ -1,0 +1,116 @@
+# ============================================================
+# Bangalore Job Alert Pipeline — curated company list
+# All companies are ~500-10,000 employees (verified live boards)
+# ats: greenhouse | lever
+# size: approximate headcount, shown in alert emails
+# Add/remove companies freely — dead boards are skipped automatically.
+# ============================================================
+
+settings:
+  # ---- Role filter (title keywords, lowercase, substring match) ----
+  include_titles:
+    - java
+    - spring
+    - backend
+    - back-end
+    - back end
+    - full stack
+    - full-stack
+    - fullstack
+    - software engineer
+    - software developer
+    - sde
+    - member of technical staff
+    - platform engineer
+    - react
+    - node
+
+  # Noise / too-senior filters (applied BEFORE include list)
+  exclude_titles:
+    - developer advocate
+    - developer relations
+    - devrel
+    - sales
+    - account manager
+    - recruit
+    - talent
+    - people
+    - intern
+    - internship
+    - graduate
+    - campus
+    - qa
+    - quality assurance
+    - test engineer
+    - support engineer
+    - technical account
+    - solution engineer
+    - solutions engineer
+    - solution architect
+    - solutions architect
+    - presales
+    - pre-sales
+    - engineering manager
+    - product manager
+    - program manager
+    - project manager
+    - staff
+    - principal
+    - senior
+    - sr.
+    - "sr "
+    - architect
+    - director
+    - vp
+    - head of
+    - lead
+
+  # ---- Location filter (matched against location + title) ----
+  location_include:
+    - bangalore
+    - bengaluru
+    - blr
+    - karnataka
+
+  # Also accept "Remote - India" style listings
+  remote_india_ok: true
+
+  max_email_jobs: 30     # cap rows per alert email
+  state_path: state/seen_jobs.json
+  outbox_path: outbox
+
+companies:
+  # ---------- Product companies & GCCs (Greenhouse) ----------
+  - {name: Postman,       ats: greenhouse, slug: postman,       size: "~900"}
+  - {name: Databricks,    ats: greenhouse, slug: databricks,    size: "~8,000"}
+  - {name: MongoDB,       ats: greenhouse, slug: mongodb,       size: "~5,500"}
+  - {name: Datadog,       ats: greenhouse, slug: datadog,       size: "~6,500"}
+  - {name: Elastic,       ats: greenhouse, slug: elastic,       size: "~3,000"}
+  - {name: Grafana Labs,  ats: greenhouse, slug: grafanalabs,   size: "~1,300"}
+  - {name: Neo4j,         ats: greenhouse, slug: neo4j,         size: "~1,000"}
+  - {name: Vercel,        ats: greenhouse, slug: vercel,        size: "~700"}
+  - {name: GitLab,        ats: greenhouse, slug: gitlab,        size: "~2,200"}
+  - {name: Canonical,     ats: greenhouse, slug: canonical,     size: "~1,300"}
+  - {name: Zuora,         ats: greenhouse, slug: zuora,         size: "~2,000"}
+  - {name: Zscaler,       ats: greenhouse, slug: zscaler,       size: "~9,000"}
+  - {name: Turing,        ats: greenhouse, slug: turing,        size: "~1,500"}
+  - {name: Ping Identity, ats: greenhouse, slug: pingidentity,  size: "~2,000"}
+  - {name: Glean,         ats: greenhouse, slug: gleanwork,     size: "~1,700"}
+  - {name: GoDaddy,       ats: greenhouse, slug: godaddy,       size: "~7,000"}
+  - {name: Robinhood,     ats: greenhouse, slug: robinhood,     size: "~3,000"}
+  - {name: Reddit,        ats: greenhouse, slug: reddit,        size: "~2,500"}
+  - {name: Coursera,      ats: greenhouse, slug: coursera,      size: "~1,400"}
+  - {name: CockroachDB,   ats: greenhouse, slug: cockroachlabs, size: "~800"}
+  - {name: SingleStore,   ats: greenhouse, slug: singlestore,   size: "~500"}
+  - {name: Figma,         ats: greenhouse, slug: figma,         size: "~1,600"}
+  - {name: Commvault,     ats: greenhouse, slug: commvault,     size: "~3,000"}
+  - {name: SolarWinds,    ats: greenhouse, slug: solarwinds,    size: "~2,600"}
+
+  # ---------- Indian product companies ----------
+  - {name: Groww,         ats: greenhouse, slug: groww,       size: "~1,800"}
+  - {name: CRED,          ats: lever, slug: cred,        size: "~1,200"}
+  - {name: Meesho,        ats: lever, slug: meesho,      size: "~2,000"}
+  - {name: Zeta,          ats: lever, slug: zeta,        size: "~1,700"}
+  - {name: Mindtickle,    ats: lever, slug: mindtickle,  size: "~1,100"}
+  - {name: Porter,        ats: lever, slug: porter,      size: "~3,200"}
+  - {name: Pocket FM,     ats: lever, slug: pocketfm,    size: "~900"}
