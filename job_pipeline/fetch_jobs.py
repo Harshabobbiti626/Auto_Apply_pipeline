@@ -291,11 +291,42 @@ def strip_html(raw, limit=220):
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def _kw_hit(text, kw):
+    """Short tokens (sde, sse, sr, ml, qa) match on word boundaries only."""
+    kw = (kw or "").lower()
+    if len(kw) <= 4 and kw.isalnum():
+        return re.search(r"\b" + re.escape(kw) + r"\b", text) is not None
+    return kw in text
+
+
 def title_allowed(title, s):
     t = (title or "").lower()
-    if any(x in t for x in s["exclude_titles"]):
+    if any(_kw_hit(t, x) for x in s["exclude_titles"]):
         return False
-    return any(x in t for x in s["include_titles"])
+    return any(_kw_hit(t, x) for x in s["include_titles"])
+
+
+EXP_RE = re.compile(r"\b(\d{1,2})(?:\s*(?:\+|plus)|\s*(?:to|–|—|-)\s*(\d{1,2}))?\s*(?:years?|yrs?)\b", re.I)
+
+
+def experience_fit(title, desc, s):
+    """False only when an explicit experience range clearly doesn't fit (~2 yrs).
+    Uses the most permissive reading when several ranges appear in the text."""
+    target_max_asks = float(s.get("experience_max_asks", 3))
+    target_min_asks = float(s.get("experience_min_asks", 1.5))
+    mins, maxs = [], []
+    for m in EXP_RE.finditer(f"{title or ''} {desc or ''}"):
+        lo = int(m.group(1))
+        hi = int(m.group(2)) if m.group(2) else lo
+        mins.append(lo)
+        maxs.append(hi)
+    if not mins:
+        return True
+    if min(mins) > target_max_asks:      # e.g. "5-8 years" — too senior
+        return False
+    if max(maxs) < target_min_asks:      # e.g. "0-1 years" — fresher level
+        return False
+    return True
 
 
 def location_allowed(job, s):
@@ -452,8 +483,9 @@ def main():
 
     all_matches, new_jobs, failed = [], [], []
     min_score = s.get("min_profile_score", 4)
+    agg_score = s.get("aggregator_min_profile_score", 6)
     max_age = float(s.get("max_job_age_hours", 26))
-    skipped_old = 0
+    skipped_old = skipped_exp = 0
 
     companies = list(cfg["companies"])
     # Optional aggregator sources — activated only when their API key secret exists
@@ -488,7 +520,11 @@ def main():
                     except Exception:
                         pass
                 score, kws = score_job(job, s)
-                if score < min_score:  # not an exact profile match
+                eff_min = agg_score if company["ats"] in ("adzuna", "jsearch") else min_score
+                if score < eff_min:  # not an exact profile match (aggregators demand more)
+                    continue
+                if not experience_fit(job["title"], strip_html(job["desc"], limit=6000), s):
+                    skipped_exp += 1  # posting states a range outside ~2 years
                     continue
                 if not is_fresh(job["posted"], max_age):  # older than "posted today"
                     skipped_old += 1
@@ -505,8 +541,9 @@ def main():
             log.info("%-15s %2d/%2d jobs match profile", name, kept, len(jobs))
 
     new_jobs.sort(key=lambda r: (-r["score"], r["company"]))
-    log.info("Total open matches: %d | NEW: %d | older-than-%dh skipped: %d | boards failed: %d",
-             len(all_matches), len(new_jobs), max_age, skipped_old, len(failed))
+    log.info("Total open matches: %d | NEW: %d | wrong-experience skipped: %d | "
+             "older-than-%dh skipped: %d | boards failed: %d",
+             len(all_matches), len(new_jobs), skipped_exp, max_age, skipped_old, len(failed))
 
     outbox = os.path.join(ROOT, s.get("outbox_path", "outbox"))
     os.makedirs(outbox, exist_ok=True)

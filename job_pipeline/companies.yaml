@@ -67,8 +67,12 @@ settings:
     - staff
     - principal
     - senior
-    - sr.
-    - "sr "
+    - sr
+    - sse
+    - ml
+    - trainee
+    - fresher
+    - entry level
     - architect
     - director
     - vp
@@ -94,6 +98,18 @@ settings:
   # Title hit = weight x2, description hit = weight x1.
   # 4 = balanced (java+rest+aws passes). Raise to 6-8 for ultra-strict matching.
   min_profile_score: 4
+
+  # ---- Experience fit (profile: ~2 years) ----
+  # Postings that STATE an explicit range (e.g. "4-7 years", "5+ yrs") are
+  # dropped unless the range fits. No explicit range => always passes.
+  experience_target_years: 2
+  experience_max_asks: 3       # posting asks for more than 3y min => too senior
+  experience_min_asks: 1.5     # posting caps below 1.5y => fresher-level, skip
+
+  # Aggregator sources (Adzuna/JSearch) carry agency spam — demand a higher
+  # profile score from them than from direct company boards:
+  aggregator_min_profile_score: 6
+
   profile_keywords:
     spring boot: 3
     spring: 3
