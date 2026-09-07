@@ -28,6 +28,7 @@ from email.mime.text import MIMEText
 
 import requests
 import yaml
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -136,6 +137,151 @@ def fetch_lever(slug):
 
 
 FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever}
+
+
+class SkipSource(Exception):
+    """Optional source missing its API key — not a failure."""
+
+
+def fetch_smartrecruiters(slug):
+    """SmartRecruiters public postings API (descriptions fetched lazily per matched job)."""
+    data = _get(f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100")
+    jobs = []
+    for j in data.get("content") or []:
+        loc = j.get("location") or {}
+        jobs.append({
+            "id": str(j.get("id", "")),
+            "title": j.get("name") or "",
+            "url": f"https://jobs.smartrecruiters.com/{slug}/{j.get('id')}",
+            "location": ", ".join(x for x in (loc.get("city"), loc.get("region"), loc.get("country")) if x),
+            "posted": j.get("releasedDate"),
+            "desc": "",
+        })
+    return jobs
+
+
+def smartrecruiters_detail(slug, job_id):
+    return _get(f"https://api.smartrecruiters.com/v1/companies/{slug}/postings/{job_id}")
+
+
+def fetch_workable(slug):
+    """Workable public widget API."""
+    r = requests.post(f"https://apply.workable.com/api/v3/accounts/{slug}/jobs",
+                      json={"query": "", "location": [], "department": [], "worktype": []},
+                      headers=UA, timeout=25)
+    r.raise_for_status()
+    jobs = []
+    for j in r.json().get("results") or []:
+        loc = ", ".join(x for x in (j.get("city"), j.get("state"), j.get("country")) if x)
+        jobs.append({
+            "id": str(j.get("id") or j.get("shortlink") or j.get("title")),
+            "title": j.get("title") or "",
+            "url": j.get("shortlink") or j.get("url") or "",
+            "location": loc,
+            "posted": j.get("created_at"),
+            "desc": "",
+        })
+    return jobs
+
+
+def fetch_jobicy(_slug):
+    """Global remote board (free, keyless). Only India-eligible roles pass the location filter."""
+    data = _get("https://jobicy.com/api/v2/remote-jobs?count=50")
+    jobs = []
+    for j in data.get("jobs") or []:
+        jobs.append({
+            "id": str(j.get("id", "")),
+            "title": j.get("jobTitle") or "",
+            "url": j.get("url") or "",
+            "location": f"{j.get('jobGeo') or ''} (remote)",
+            "posted": j.get("pubDate"),
+            "desc": j.get("jobExcerpt") or j.get("jobDescription") or "",
+            "company_override": j.get("companyName") or "",
+        })
+    return jobs
+
+
+def fetch_arbeitnow(_slug):
+    """Global job board (free, keyless). Only India-eligible roles pass the location filter."""
+    data = _get("https://www.arbeitnow.com/api/job-board-api")
+    jobs = []
+    for j in data.get("data") or []:
+        created = None
+        ts = j.get("created_at")
+        if ts:
+            try:
+                created = datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+            except (ValueError, TypeError, OverflowError):
+                pass
+        jobs.append({
+            "id": str(j.get("slug") or j.get("id") or j.get("title")),
+            "title": j.get("title") or "",
+            "url": j.get("url") or f"https://www.arbeitnow.com/jobs/{j.get('slug', '')}",
+            "location": f"{j.get('location') or ''}{' (remote)' if j.get('remote') else ''}",
+            "posted": created,
+            "desc": strip_html(j.get("description") or "", limit=1500),
+            "company_override": j.get("company_name") or "",
+        })
+    return jobs
+
+
+def fetch_adzuna(_slug):
+    """Adzuna India aggregator — free key required (developer.adzuna.com)."""
+    app_id, app_key = os.environ.get("ADZUNA_APP_ID"), os.environ.get("ADZUNA_APP_KEY")
+    if not (app_id and app_key):
+        raise SkipSource("ADZUNA_APP_ID / ADZUNA_APP_KEY not set — get a free key at developer.adzuna.com")
+    data = _get("https://api.adzuna.com/v1/api/jobs/in/search/1"
+                f"?app_id={app_id}&app_key={app_key}&results_per_page=50&max_days_old=1"
+                f"&what_or={urllib.parse.quote('java spring boot react full stack backend')}"
+                f"&where={urllib.parse.quote('bengaluru')}")
+    jobs = []
+    for j in data.get("results") or []:
+        jobs.append({
+            "id": str(j.get("id", "")),
+            "title": j.get("title") or "",
+            "url": j.get("redirect_url") or "",
+            "location": (j.get("location") or {}).get("display_name") or "",
+            "posted": j.get("created"),
+            "desc": strip_html(j.get("description") or "", limit=1500),
+            "company_override": (j.get("company") or {}).get("display_name") or "",
+        })
+    return jobs
+
+
+def fetch_jsearch(_slug):
+    """JSearch (RapidAPI) — aggregates LinkedIn/Indeed/Naukri/Glassdoor. Paid key required."""
+    key = os.environ.get("JSEARCH_API_KEY")
+    if not key:
+        raise SkipSource("JSEARCH_API_KEY not set — optional paid source on RapidAPI")
+    r = requests.get("https://jsearch.p.rapidapi.com/search",
+                     params={"query": "java spring boot backend developer jobs in Bengaluru India",
+                             "num_pages": 1, "date_posted": "today"},
+                     headers={**UA, "X-RapidAPI-Key": key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"},
+                     timeout=25)
+    r.raise_for_status()
+    jobs = []
+    for j in r.json().get("data") or []:
+        loc = ", ".join(x for x in (j.get("job_city"), j.get("job_country")) if x)
+        jobs.append({
+            "id": str(j.get("job_id", "")),
+            "title": j.get("job_title") or "",
+            "url": j.get("job_apply_link") or j.get("job_google_link") or "",
+            "location": loc or ("remote (india)" if j.get("job_is_remote") else ""),
+            "posted": j.get("job_posted_at_datetime_utc"),
+            "desc": strip_html(j.get("job_description") or "", limit=1500),
+            "company_override": j.get("employer_name") or "",
+        })
+    return jobs
+
+
+FETCHERS.update({
+    "smartrecruiters": fetch_smartrecruiters,
+    "workable": fetch_workable,
+    "jobicy": fetch_jobicy,
+    "arbeitnow": fetch_arbeitnow,
+    "adzuna": fetch_adzuna,
+    "jsearch": fetch_jsearch,
+})
 
 
 # ---------------------------------------------------------------- filtering
@@ -308,13 +454,24 @@ def main():
     min_score = s.get("min_profile_score", 4)
     max_age = float(s.get("max_job_age_hours", 26))
     skipped_old = 0
+
+    companies = list(cfg["companies"])
+    # Optional aggregator sources — activated only when their API key secret exists
+    if os.environ.get("ADZUNA_APP_ID") and os.environ.get("ADZUNA_APP_KEY"):
+        companies.append({"name": "Adzuna", "ats": "adzuna", "slug": "-", "size": "aggregator"})
+    if os.environ.get("JSEARCH_API_KEY"):
+        companies.append({"name": "JSearch", "ats": "jsearch", "slug": "-", "size": "aggregator"})
+
     with ThreadPoolExecutor(max_workers=12) as pool:
-        future_map = {pool.submit(fetch_company, c): c for c in cfg["companies"]}
+        future_map = {pool.submit(fetch_company, c): c for c in companies}
         for fut in as_completed(future_map):
             company = future_map[fut]
             name, slug = company["name"], company["slug"]
             try:
                 _, jobs = fut.result()
+            except SkipSource as e:
+                log.info("Optional source disabled: %s", e)
+                continue
             except Exception as e:  # dead board / network hiccup — skip gracefully
                 failed.append(f"{name} ({slug}): {e}")
                 log.warning("Board failed, skipping: %s (%s) — %s", name, slug, e)
@@ -324,15 +481,21 @@ def main():
             for job in jobs:
                 if not title_allowed(job["title"], s) or not location_allowed(job, s):
                     continue
+                if company["ats"] == "smartrecruiters" and not job["desc"]:
+                    try:  # score on the full description, not just the title
+                        det = smartrecruiters_detail(slug, job["id"])
+                        job["desc"] = det.get("description") or ""
+                    except Exception:
+                        pass
                 score, kws = score_job(job, s)
                 if score < min_score:  # not an exact profile match
                     continue
                 if not is_fresh(job["posted"], max_age):  # older than "posted today"
                     skipped_old += 1
                     continue
-                match = {**job, "company": name, "size": company.get("size", ""),
-                         "ats": company["ats"], "snippet": strip_html(job["desc"]),
-                         "score": score, "kws": kws}
+                match = {**job, "company": job.get("company_override") or name,
+                         "size": company.get("size", ""), "ats": company["ats"],
+                         "snippet": strip_html(job["desc"]), "score": score, "kws": kws}
                 all_matches.append(match)
                 kept += 1
                 key = f"{name}:{job['id']}"

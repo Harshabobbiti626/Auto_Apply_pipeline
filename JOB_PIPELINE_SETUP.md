@@ -1,11 +1,37 @@
 # 🔔 Bangalore Job Alert Pipeline — Setup Guide
 
-Fully automated: **every hour**, checks career pages of 31 curated Bangalore-hiring companies
-(500–10,000 employees) for new **Java / Spring Boot / Backend / Full-stack / React** roles at your
-level, and emails you only the **new** ones — within ~1 hour of them being posted.
+Fully automated: **every hour**, checks 46 sources — 44 curated Bangalore-hiring companies
+(500–10,000 employees) across Greenhouse, Lever, SmartRecruiters, Workable, plus global remote
+boards (Jobicy, Arbeitnow), plus optional aggregators (Adzuna, JSearch) — for new
+**Java / Spring Boot / Backend / Full-stack / React** roles matching a ~2-year experience level
+and published in the **last 26 hours**. Emails only the new matches, within ~1 hour of posting.
 
-Runs free on GitHub Actions (no PC needed). Source: Greenhouse + Lever boards (fresh listings,
-no scraping, no ToS issues).
+Runs free on GitHub Actions (no PC needed). All sources are public APIs — no scraping, no ToS issues.
+
+## Sources
+
+| Source | Type | Status |
+|---|---|---|
+| Greenhouse + Lever (44 companies) | curated, keyless | ✅ live |
+| SmartRecruiters (Whatfix + addable) | public API, keyless | ✅ live |
+| Workable | public API, keyless | ✅ supported (add companies anytime) |
+| Jobicy, Arbeitnow | global remote, keyless | ✅ live (India-eligible only pass) |
+| **Adzuna India** (aggregates many boards) | needs **free** key | ⏳ optional — see below |
+| **JSearch** (LinkedIn/Indeed/Naukri/Glassdoor) | paid (RapidAPI ~$10/mo) | ⏳ optional |
+| Naukri / LinkedIn / Indeed direct | — | ❌ anti-bot + ToS — not supported |
+| Ashby (ATS) | — | ❌ API now requires auth |
+| Remotive / RemoteOK / Himalayas | — | ❌ Cloudflare-blocked for automation |
+
+### Optional: unlock Adzuna (free, 2 minutes)
+
+1. Sign up at https://developer.adzuna.com → get `APP ID` + `API KEY` (free: 250 calls/day)
+2. Add repo secrets `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` — the pipeline picks it up next run,
+   querying Bengaluru postings ≤1 day old with your stack keywords
+
+### Optional: unlock JSearch (paid)
+
+Add secret `JSEARCH_API_KEY` from RapidAPI (JSearch, ~$10/mo for 25k calls). This is the only
+clean route to LinkedIn/Indeed/Naukri listings; without it those portals are out of reach legally.
 
 ```
 GitHub Actions (hourly cron) → fetch_jobs.py → filter (BLR + role + level)

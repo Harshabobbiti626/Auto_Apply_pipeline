@@ -170,3 +170,10 @@ companies:
   - {name: Coinbase,      ats: greenhouse, slug: coinbase,   size: "~5,000"}
   - {name: Zenoti,        ats: greenhouse, slug: zenoti,     size: "~1,500"}
   - {name: Netradyne,     ats: greenhouse, slug: netradyne,  size: "~1,000"}
+
+  # ---------- Other ATS + global remote boards (free, verified live) ----------
+  # smartrecruiters / workable: add any company as {name, ats, slug, size}
+  - {name: Whatfix,       ats: smartrecruiters, slug: whatfix, size: "~1,000"}
+  # Global remote boards — only India-eligible postings survive the location filter
+  - {name: Jobicy,        ats: jobicy,     slug: "-", size: "remote"}
+  - {name: Arbeitnow,     ats: arbeitnow,  slug: "-", size: "remote"}
