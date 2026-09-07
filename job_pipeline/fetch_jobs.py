@@ -28,6 +28,7 @@ from email.mime.text import MIMEText
 
 import requests
 import yaml
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 IST = timezone(timedelta(hours=5, minutes=30))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -157,6 +158,19 @@ def location_allowed(job, s):
     return bool(s["remote_india_ok"] and "remote" in text and "india" in text)
 
 
+def score_job(job, s):
+    """Profile match score from resume keywords. Title hit = weight x2, desc hit = weight x1."""
+    title = (job["title"] or "").lower()
+    desc = re.sub(r"\s+", " ", strip_html(job["desc"], limit=6000)).lower()
+    score, hits = 0, []
+    for kw, weight in (s.get("profile_keywords") or {}).items():
+        pts = (weight * 2 if kw in title else 0) + (weight if kw in desc else 0)
+        if pts:
+            score += pts
+            hits.append(kw)
+    return score, hits
+
+
 def rel_time(iso):
     if not iso:
         return "recent"
@@ -191,6 +205,7 @@ def build_email(rows, intro=False):
 
     body_rows = []
     for r in shown:
+        kws = " · ".join(r["kws"][:6])
         body_rows.append(f"""
         <tr>
           <td style='padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top;white-space:nowrap'>
@@ -201,7 +216,8 @@ def build_email(rows, intro=False):
               {html_mod.escape(r['title'])}</a><br>
             <span style='color:#666;font-size:13px'>{html_mod.escape(r['location'] or '—')}
               · posted {rel_time(r['posted'])}</span>
-            <br><span style='color:#777;font-size:12px'>{html_mod.escape(r['snippet'])}</span></td>
+            <br><span style='color:#777;font-size:12px'>{html_mod.escape(r['snippet'])}</span>
+            <br><span style='color:#1a56db;font-size:12px'>Profile match: {html_mod.escape(kws)}</span></td>
         </tr>""")
 
     tail = f"<p style='color:#888;font-size:12px'>+ {extra} more (see previous emails / report)</p>" if extra else ""
@@ -211,34 +227,59 @@ def build_email(rows, intro=False):
     html = (f"<div style='font-family:Segoe UI,Arial,sans-serif;max-width:760px;margin:auto'>{head}"
             f"<table style='border-collapse:collapse;width:100%'>{''.join(body_rows)}</table>{tail}{foot}</div>")
 
-    lines = [f"{r['company']} ({r['size']}) — {r['title']} [{r['location']}] ({rel_time(r['posted'])})\n  {r['url']}\n"
+    lines = [f"{r['company']} ({r['size']}) - {r['title']} [{r['location']}] ({rel_time(r['posted'])})\n"
+             f"  Match: {', '.join(r['kws'][:6])}\n  {r['url']}\n"
              for r in shown]
     text = f"NEW BANGALORE JOBS ({len(rows)}):\n\n" + "\n".join(lines)
     return html, text
 
 
 def send_email(subject, html_body, text_body):
-    user = os.environ["GMAIL_USER"]
-    password = os.environ["GMAIL_APP_PASSWORD"]
-    to = os.environ.get("ALERT_TO") or user
+    send_mime(_multipart(subject, html_body, text_body))
+    log.info("Email sent to %s", os.environ.get("ALERT_TO") or os.environ["GMAIL_USER"])
 
+
+def _multipart(subject, html_body, text_body):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"BLR Job Alerts <{user}>"
-    msg["To"] = to
+    msg["From"] = f"BLR Job Alerts <{os.environ['GMAIL_USER']}>"
+    msg["To"] = os.environ.get("ALERT_TO") or os.environ["GMAIL_USER"]
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
+    return msg
 
+
+def send_text_email(subject, text_body):
+    send_mime(_multipart(subject, "", text_body))
+
+
+def send_mime(msg):
     with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as s:
         s.starttls()
-        s.login(user, password)
+        s.login(os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASSWORD"])
         s.send_message(msg)
-    log.info("Email sent to %s", to)
+
+
+def notify_failure(message):
+    """Used by the workflow's failure step: email the user that a run failed."""
+    subject = "BLR job pipeline - hourly run FAILED"
+    body = (f"{message}\n\nThe hourly job-alert run failed. Open the Actions tab to inspect the log.\n"
+            "No jobs were lost - the next hourly run continues from the last saved state.")
+    try:
+        send_text_email(subject, body)
+        log.info("Failure alert email sent")
+        return 0
+    except Exception as e:
+        log.error("Could not send failure alert: %s", e)
+        return 1
 
 
 # ---------------------------------------------------------------- main
 def main():
     global max_email_jobs_global
+    if len(sys.argv) > 1 and sys.argv[1] == "--notify":  # failure-alert mode (see workflow)
+        return notify_failure(" ".join(sys.argv[2:]) or "Hourly run failed.")
+
     cfg = load_config()
     s = cfg["settings"]
     max_email_jobs_global = s["max_email_jobs"]
@@ -246,29 +287,42 @@ def main():
     seen, existed = load_state(cfg)
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    def fetch_company(company):
+        return company, FETCHERS[company["ats"]](company["slug"])
+
     all_matches, new_jobs, failed = [], [], []
-    for company in cfg["companies"]:
-        name, ats, slug = company["name"], company["ats"], company["slug"]
-        try:
-            jobs = FETCHERS[ats](slug)
-        except Exception as e:  # dead board / network hiccup — skip gracefully
-            failed.append(f"{name} ({slug}): {e}")
-            log.warning("Board failed, skipping: %s (%s) — %s", name, slug, e)
-            continue
-
-        for job in jobs:
-            if not title_allowed(job["title"], s) or not location_allowed(job, s):
+    min_score = s.get("min_profile_score", 5)
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        future_map = {pool.submit(fetch_company, c): c for c in cfg["companies"]}
+        for fut in as_completed(future_map):
+            company = future_map[fut]
+            name, slug = company["name"], company["slug"]
+            try:
+                _, jobs = fut.result()
+            except Exception as e:  # dead board / network hiccup — skip gracefully
+                failed.append(f"{name} ({slug}): {e}")
+                log.warning("Board failed, skipping: %s (%s) — %s", name, slug, e)
                 continue
-            match = {**job, "company": name, "size": company.get("size", ""), "ats": ats,
-                     "snippet": strip_html(job["desc"])}
-            all_matches.append(match)
-            key = f"{name}:{job['id']}"
-            if key not in seen:
-                seen[key] = now_iso
-                new_jobs.append(match)
-        log.info("%-15s %2d jobs on board", name, len(jobs))
 
-    new_jobs.sort(key=lambda r: r["company"])
+            kept = 0
+            for job in jobs:
+                if not title_allowed(job["title"], s) or not location_allowed(job, s):
+                    continue
+                score, kws = score_job(job, s)
+                if score < min_score:  # not an exact profile match
+                    continue
+                match = {**job, "company": name, "size": company.get("size", ""),
+                         "ats": company["ats"], "snippet": strip_html(job["desc"]),
+                         "score": score, "kws": kws}
+                all_matches.append(match)
+                kept += 1
+                key = f"{name}:{job['id']}"
+                if key not in seen:
+                    seen[key] = now_iso
+                    new_jobs.append(match)
+            log.info("%-15s %2d/%2d jobs match profile", name, kept, len(jobs))
+
+    new_jobs.sort(key=lambda r: (-r["score"], r["company"]))
     log.info("Total open matches: %d | NEW: %d | boards failed: %d", len(all_matches), len(new_jobs), len(failed))
 
     outbox = os.path.join(ROOT, s.get("outbox_path", "outbox"))
@@ -276,8 +330,9 @@ def main():
     stamp = datetime.now(IST).strftime("%Y%m%d_%H%M")
     with open(os.path.join(outbox, f"report_{stamp}.md"), "w", encoding="utf-8") as f:
         f.write(f"# Run {stamp} IST — {len(all_matches)} open matches, {len(new_jobs)} new\n\n")
-        for r in all_matches:
-            f.write(f"- **{r['company']}** ({r['size']}) — [{r['title']}]({r['url']}) — {r['location']}\n")
+        for r in sorted(all_matches, key=lambda x: (-x["score"], x["company"])):
+            f.write(f"- **{r['company']}** ({r['size']}) — [{r['title']}]({r['url']}) — {r['location']}"
+                    f" — match {r['score']}: {', '.join(r['kws'][:6])}\n")
         if failed:
             f.write("\n## Failed boards\n" + "\n".join(f"- {x}" for x in failed) + "\n")
 
@@ -288,7 +343,7 @@ def main():
     save_state(cfg, seen)
 
     if not existed:  # first run: seed silently + intro email (avoid blasting hundreds)
-        sample = sorted(all_matches, key=lambda r: r["company"])[:15]
+        sample = sorted(all_matches, key=lambda r: (-r["score"], r["company"]))[:15]
         html_body, text_body = build_email(sample, intro=True)
         subject = f"✅ Job pipeline live — {len(all_matches)} matching Bangalore jobs open now"
     elif new_jobs:

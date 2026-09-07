@@ -45,6 +45,16 @@ jobs:
           ALERT_TO: ${{ secrets.ALERT_TO }}
         run: python job_pipeline/fetch_jobs.py
 
+      - name: Email failure alert
+        if: failure()
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+        run: >-
+          python job_pipeline/fetch_jobs.py --notify "The hourly Bangalore job run FAILED.
+          Inspect: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - name: Save seen-jobs state
         if: always()
         uses: actions/cache/save@v4
@@ -52,15 +62,21 @@ jobs:
           path: job_pipeline/state
           key: seen-jobs-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # Durable fallback: snapshot state into the repo once a day (07:07 UTC run)
-      - name: Daily state snapshot
+      # Durable fallback: snapshot state into the repo once a day (07:07 UTC run).
+      # The guaranteed daily commit also keeps repo "activity" alive so GitHub
+      # never auto-disables the scheduled workflow (60-day inactivity rule).
+      - name: Daily state snapshot + keepalive
         if: always()
         run: |
           if [ "$(date -u +%H)" = "07" ] && [ -f job_pipeline/state/seen_jobs.json ]; then
             git config user.name "job-alert-bot"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add job_pipeline/state/seen_jobs.json
-            git diff --cached --quiet || git commit -m "chore: seen-jobs snapshot $(date -u +%F)"
+            if git diff --cached --quiet; then
+              git commit --allow-empty -m "chore: keepalive $(date -u +%F)"
+            else
+              git commit -m "chore: seen-jobs snapshot $(date -u +%F)"
+            fi
             git push
           fi
 

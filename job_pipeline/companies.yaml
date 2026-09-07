@@ -38,6 +38,12 @@ settings:
     - intern
     - internship
     - graduate
+    - machine learning
+    - ml engineer
+    - deep learning
+    - data science
+    - data scientist
+    - data engineer
     - campus
     - qa
     - quality assurance
@@ -74,6 +80,33 @@ settings:
 
   # Also accept "Remote - India" style listings
   remote_india_ok: true
+
+  # ---- Profile match scoring (description-level, keywords from resume) ----
+  # A job is emailed only if its weighted score >= min_profile_score.
+  # Title hit = weight x2, description hit = weight x1.
+  # 4 = balanced (java+rest+aws passes). Raise to 6-8 for ultra-strict matching.
+  min_profile_score: 4
+  profile_keywords:
+    spring boot: 3
+    spring: 3
+    java: 2
+    microservices: 2
+    react: 2
+    typescript: 2
+    full stack: 2
+    full-stack: 2
+    node: 1
+    javascript: 1
+    rest api: 1
+    restful: 1
+    hibernate: 1
+    jpa: 1
+    aws: 1
+    docker: 1
+    kubernetes: 1
+    redis: 1
+    mysql: 1
+    postgresql: 1
 
   max_email_jobs: 30     # cap rows per alert email
   state_path: state/seen_jobs.json
